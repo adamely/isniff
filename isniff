@@ -1,0 +1,268 @@
+#!/usr/bin/env ruby -Ebinary
+#
+# Copyright (c) 2013 Eric Monti - Bluebox Security
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+require 'socket'
+
+require 'rubygems'
+require 'rbkb/extends'
+require 'rstruct'
+require 'idevice'
+require 'ffi-pcap'
+
+
+module PcapdPkt
+  extend Rstruct::ClassMethods
+
+  PROTOCOL_FAMILIES = Hash[
+    Socket.constants.grep(/^PF_/).map do |pfname|
+      [Socket.const_get(pfname), pfname]
+    end + [
+      # a few extra protocol values from xnu's bsd/sys/socket.h
+      [0x766c616e, :vlan],
+      [0x626f6e64, :bond],
+      [0x62726467, :bridge],
+    ]
+  ]
+
+  DIRECTIONS = { 0x10 => :INPUT, 0x01 => :OUTPUT }
+
+  INTERFACE_TYPES = {
+    0x1  => :OTHER,
+    0x2  => :BBN_1822,
+    0x3  => :HDH1822,
+    0x4  => :X25DDN,
+    0x5  => :X25,
+    0x6  => :ETHER,
+    0x7  => :ISO88023,
+    0x8  => :ISO88024,
+    0x9  => :ISO88025,
+    0xa  => :ISO88026,
+    0xb  => :STARLAN,
+    0xc  => :P10,
+    0xd  => :P80,
+    0xe  => :HY,
+    0xf  => :FDDI,
+    0x10 => :LAPB,
+    0x11 => :SDLC,
+    0x12 => :T1,
+    0x13 => :CEPT,
+    0x14 => :ISDNBASIC,
+    0x15 => :ISDNPRIMARY,
+    0x16 => :PTPSERIAL,
+    0x17 => :PPP,
+    0x18 => :LOOP,
+    0x19 => :EON,
+    0x1a => :XETHER,
+    0x1b => :NSIP,
+    0x1c => :SLIP,
+    0x1d => :ULTRA,
+    0x1e => :DS3,
+    0x1f => :SIP,
+    0x20 => :FRELAY,
+    0x21 => :RS232,
+    0x22 => :PARA,
+    0x23 => :ARCNET,
+    0x24 => :ARCNETPLUS,
+    0x25 => :ATM,
+    0x26 => :MIOX25,
+    0x27 => :SONET,
+    0x28 => :X25PLE,
+    0x29 => :ISO88022LLC,
+    0x2a => :LOCALTALK,
+    0x2b => :SMDSDXI,
+    0x2c => :FRELAYDCE,
+    0x2d => :V35,
+    0x2e => :HSSI,
+    0x2f => :HIPPI,
+    0x30 => :MODEM,
+    0x31 => :AAL5,
+    0x32 => :SONETPATH,
+    0x33 => :SONETVT,
+    0x34 => :SMDSICIP,
+    0x35 => :PROPVIRTUAL,
+    0x36 => :PROPMUX,
+    0x37 => :GIF,
+    0x38 => :FAITH,
+    0x39 => :STF,
+    0x87 => :L2VLAN,
+    0x88 => :IEEE8023ADLAG,
+    0x90 => :IEEE1394,
+    0xd1 => :BRIDGE,
+    0xf4 => :ENC,
+    0xf5 => :PFLOG,
+    0xf6 => :PFSYNC,
+    0xf8 => :CARP,
+    0xfe => :PKTAP,
+    0xff => :CELLULAR,
+  }
+
+  MAXCOMLEN = 16
+  IFNAMESIZE = 16
+
+  typedef :uint32_t, :pid_t
+  typedef :ubyte, :uint8_t
+
+  struct(:pkt_prologue) {
+    uint32be    :hdr_length
+    uint8_t     :hdr_version
+  }
+
+  struct(:pkt_header_v1) {
+    uint32be    :frame_length
+    uint8_t     :if_type
+    uint16le    :if_num
+    uint8_t     :direction
+    uint32be    :protocol_family
+    uint32be    :frame_pre_length
+    uint32be    :frame_post_length
+    array       :if_name, :char, IFNAMESIZE
+  }
+
+  struct(:pkt_header_v2) {
+    uint32be    :frame_length
+    uint8_t     :if_type
+    uint16le    :if_num
+    uint8_t     :direction
+    uint32be    :protocol_family
+    uint32be    :frame_pre_length
+    uint32be    :frame_post_length
+    array       :if_name, :char, IFNAMESIZE
+
+    pid_t       :pid
+    array       :command, :char, MAXCOMLEN+1
+    uint32le    :svc
+  }
+
+
+  Prologue = get_type(:pkt_prologue)
+
+  def self.parse(data)
+    data = StringIO.new(data) unless data.is_a? StringIO
+    prologue = Prologue.read(data)
+    htype = [nil, :pkt_header_v1, :pkt_header_v2][prologue.hdr_version]
+    header = get_type(htype).read( data ) if htype
+    return [prologue, header, data]
+  end
+
+  def self.charray_to_string(charray)
+    str = ""
+    charray.each{|x| break if x == "\x00" ; str << x }
+    str
+  end
+
+  def self.dump(prologue, header, rest, debug=nil)
+    #puts "Prologue: #{prologue.inspect}"
+    if header
+      pname = ift = nil
+      ifnum = 0
+
+      puts "Header V#{prologue.hdr_version}:"
+      header.each_pair.map do |name, val|
+        # calling 'next' from the cases below will skip displaying a given field
+        dval =
+          case name
+          when :frame_length, :frame_pre_length, :frame_post_length
+            next unless debug
+
+          when :if_num
+            ifnum = 0
+            next
+
+          when :direction
+            DIRECTIONS[val] || ( "[unknown direction] (0x%x" % val )
+
+          when :if_name
+            str = PcapdPkt.charray_to_string(val)
+            str = "[unknown if_name]" if str.empty?
+            "#{str}#{ifnum}"
+
+          when  :command
+            str = PcapdPkt.charray_to_string(val)
+            str = "[unknown]" if str.empty?
+            str
+
+          when :if_type
+            ift = INTERFACE_TYPES[val] || ( "[unknown if_type] (0x%x)" % val )
+
+          when :protocol_family
+            pname = PcapdPkt::PROTOCOL_FAMILIES[val] || ( "[unknown pf] (0x%x)" % val )
+
+          when :pid
+            (val == 0xffffffff) ? "[unknown]" : val
+
+          else
+            nil
+          end
+
+        dval ||= "#{val} (0x%x)" % val
+
+        puts "  #{name.to_s.ljust(20)} = #{dval}"
+      end
+
+      if header.frame_pre_length > 0
+        puts "\n#{ift} Frame Header"
+        rest.read(header.frame_pre_length).hexdump(out: $stdout)
+      end
+
+      pktlen = header.frame_length - header.frame_pre_length - header.frame_post_length
+      puts "\n#{pname} Packet Data:"
+      rest.read(pktlen).hexdump(out: $stdout)
+
+      if header.frame_post_length > 0
+        puts "\n#{ift} Frame Tail"
+        rest.read().hexdump(out: $stdout)
+      end
+
+
+    else
+      puts "Unknown Header Version: %#{prologue.hdr_version}"
+      puts "\nRaw Data:"
+      rest.hexdump(out: $stdout)
+    end
+
+  end
+
+end
+
+
+idev = Idevice::Idevice.attach
+ldcli = Idevice::LockdownClient.attach(idevice:idev)
+pcap_ldsvc = ldcli.start_service("com.apple.pcapd")
+pcap_relay = idev.connect(pcap_ldsvc[:port])
+
+begin
+  while true
+    len = olen = pcap_relay.receive_data(4).unpack("N").first
+    plist = pcap_relay.receive_data( len )
+    data = Plist.parse_binary( plist )
+    prologue, header, rest = PcapdPkt.parse( data )
+
+    PcapdPkt.dump(prologue, header, rest)
+
+    puts
+    puts "-"*80
+  end
+rescue Interrupt
+  exit 0
+ensure
+  pcap_relay.disconnect
+end
+
