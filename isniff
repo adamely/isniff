@@ -243,6 +243,9 @@ module Isniff
         puts "\nRaw Data:"
         rest.hexdump(out: $stdout)
       end
+
+      puts
+      puts "-"*80
     end
   end
 
@@ -364,8 +367,6 @@ if __FILE__ == $0
       capmuxer.write_pkt(header, pkt_data) if capmuxer
       PcapdPkt.dump(prologue, header, pkt_data, debug) if do_dump
 
-      puts
-      puts "-"*80
     end
   rescue Interrupt
     exit 0
