@@ -46,6 +46,8 @@ module Isniff
 
     DIRECTIONS = { 0x10 => :INPUT, 0x01 => :OUTPUT }
 
+    # this list is probably more exhaustive than it needs to be
+    # sourced from: xnu/bsd/net/if_types.h
     INTERFACE_TYPES = {
       0x1  => :OTHER,
       0x2  => :BBN_1822,
@@ -295,7 +297,7 @@ if __FILE__ == $0
   cmdfilter = nil
 
   opts = OptionParser.new do |o|
-    o.banner = "#{File.basename $0} [opts]"
+    o.banner = "Usage: #{File.basename $0} [opts]"
 
     o.on_tail("-h", "--help", "Display usage info and quit") do
       puts o
@@ -350,7 +352,11 @@ if __FILE__ == $0
       data = Plist.parse_binary( plist )
       prologue, header, rest = PcapdPkt.parse(data)
 
-      if cmdfilter and header.members.include?(:command)
+      if cmdfilter 
+        unless header.members.include?(:command)
+          $stderr.puts "Error: The attached idevice does not support command filtering (hint: iOS 7 and higher required)"
+          exit 1
+        end
         next unless PcapdPkt.charray_to_string(header.command) == cmdfilter
       end
 
