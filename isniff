@@ -19,6 +19,30 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Requirements:
+#   - libimobiledevice 1.1.5 or higher
+#   - libpcap
+#
+# Use bundler or 'gem install' #  to install gem dependencies
+#   - rbkb
+#   - rstruct
+#   - idevice
+#   - ffi-pcap
+#
+# Usage: isniff [opts]
+#     -u, --udid UDID                  Capture from specified device UDID
+#                                      (Default: first found)
+#     -v, --[no-]verbose               Toggle Verbose output
+#                                      (Default: off)
+#     -d, --[no-]dump                  Toggle dumping packets to stdout
+#                                      (Default: on)
+#     -w, --write PREFIX               Save pcap files using prefix
+#                                      (one file per interface)
+#     -c, --command CMDNAME            Only process packets originating from cmd
+#                                      (iOS 7+ only)
+#     -h, --help                       Display usage info and quit
+#
+
 require 'socket'
 require 'optparse'
 
