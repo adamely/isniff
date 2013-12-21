@@ -253,12 +253,12 @@ module Isniff
     def write_pkt(appl_header, body)
       dumper = get_dumper(appl_header)
 
-      # ios 6.x (and earlier?) doesn't put a frame on cell packets...
+      # ios 6.x (and earlier?) doesn't put a protocol frame on cell/non-ether packets...
       if appl_header.frame_pre_length == 0
-        body = "\x02\x00\x00\x00#{body}"
+        body = "#{[appl_header.protocol_family].pack("V")}#{body}"
       end
 
-      pkt = FFI::PCap::Packet.from_string(body)
+      pkt = FFI::PCap::Packet.from_string(body, time: Time.now)
 
       dumper.write_pkt( pkt )
     end
@@ -349,6 +349,10 @@ if __FILE__ == $0
       plist = pcap_relay.receive_data( len )
       data = Plist.parse_binary( plist )
       prologue, header, rest = PcapdPkt.parse(data)
+
+      if cmdfilter and header.members.include?(:command)
+        next unless PcapdPkt.charray_to_string(header.command) == cmdfilter
+      end
 
       pkt_data = rest.read()
       capmuxer.write_pkt(header, pkt_data) if capmuxer
