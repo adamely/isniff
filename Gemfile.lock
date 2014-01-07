@@ -14,7 +14,7 @@ GEM
     plist (3.1.0)
     rbkb (0.6.12)
       eventmachine (>= 0.12.8)
-    rstruct (0.1.2)
+    rstruct (0.1.4)
 
 PLATFORMS
   ruby
