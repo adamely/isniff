@@ -294,15 +294,17 @@ module Isniff
 
     def get_dumper(appl_header)
       ifname = "#{PcapdPkt.charray_to_string(appl_header.if_name) || "UNKNOWN"}#{appl_header.if_num}"
-      dumper = @dumpers[ifname]
+      cmd = appl_header.command if appl_header.respond_to?(:command)
+      dumpname = (cmd)? "#{ifname}.#{PcapdPkt.charray_to_string(cmd)}" : ifname
+      dumper = @dumpers[dumpname]
       if dumper.nil?
-        filename = "#{@prefix}.#{ifname}.pcap"
+        filename = "#{@prefix}.#{dumpname}.pcap"
         puts "!!!! Creating new dump file for interface: #{ifname} - #{filename}"
 
         dlt = (PcapdPkt::INTERFACE_TYPES[appl_header.if_type] == :ETHER)? :EN10MB : 0
 
         pcap = FFI::PCap::Dead.new(datalink: FFI::PCap::DataLink.new(dlt))
-        dumper = @dumpers[ifname] = pcap.open_dump(filename)
+        dumper = @dumpers[dumpname] = pcap.open_dump(filename)
       end
       return dumper
     end
