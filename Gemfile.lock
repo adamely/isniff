@@ -1,7 +1,6 @@
 GEM
   remote: https://rubygems.org/
   specs:
-    eventmachine (1.0.3)
     ffi (1.9.3)
     ffi-pcap (0.2.1)
       ffi (~> 1.0)
@@ -12,8 +11,7 @@ GEM
       ffi
       plist
     plist (3.1.0)
-    rbkb (0.6.12)
-      eventmachine (>= 0.12.8)
+    rbkb (0.7.0)
     rstruct (0.1.4)
 
 PLATFORMS
@@ -22,5 +20,5 @@ PLATFORMS
 DEPENDENCIES
   ffi-pcap
   idevice
-  rbkb
+  rbkb (>= 0.7.0)
   rstruct

@@ -1,5 +1,5 @@
 source 'https://rubygems.org'
-gem 'rbkb'
+gem 'rbkb', '>= 0.7.0'
 gem 'rstruct'
 gem 'idevice'
 gem 'ffi-pcap'
